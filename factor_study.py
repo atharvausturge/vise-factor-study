@@ -1,31 +1,3 @@
-"""
-Tech-Sector Factor Study
-=========================
-Do simple, price-based equity factors actually work *within* the technology
-sector, or are they really just bets on tech vs. the rest of the market?
-
-This script tests three factors that can be computed from price data alone
-(so there's no look-ahead bias from point-in-time fundamentals):
-
-    1. Momentum      (12-1): last 12 months of return, skipping the most recent month
-    2. Low Volatility       : low trailing-12-month daily volatility
-    3. Short-Term Reversal  : last month's losers (bet they bounce)
-
-For each factor we rank the tech universe every month, hold an equal-weighted
-top-tercile portfolio, and compare it to (a) an equal-weighted basket of the
-whole universe and (b) a long/short top-minus-bottom tercile portfolio.
-
-Run:
-    .venv/bin/python factor_study.py
-
-Outputs:
-    - results/cumulative_<factor>.png   growth-of-$1 charts
-    - results/summary.csv               performance table
-    - prints the summary table to stdout
-
-Author: Atharva Usturge
-"""
-
 import os
 import warnings
 
@@ -36,20 +8,12 @@ import yfinance as yf
 
 warnings.filterwarnings("ignore")
 
-# ---------------------------------------------------------------------------
-# Configuration
-# ---------------------------------------------------------------------------
+
 
 START = "2010-01-01"
 END = "2026-05-23"
 
-# A broad slice of the US technology sector: mega-cap platforms, semiconductors,
-# enterprise software, and a handful of newer names. Newer tickers simply get
-# excluded from the ranking in months where they don't yet have price history.
-#
-# NOTE (limitation): this is *today's* tech universe, so it carries survivorship
-# bias -- names that blew up and got delisted aren't here. Results should be read
-# as "among tech companies that survived to 2026," not "all tech companies."
+
 UNIVERSE = [
     # Mega-cap platforms
     "AAPL", "MSFT", "GOOGL", "META", "AMZN", "NVDA",
@@ -72,9 +36,9 @@ RF_ANNUAL = 0.0            # risk-free assumed 0 for simplicity (noted in writeu
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
 
-# ---------------------------------------------------------------------------
+
 # Data
-# ---------------------------------------------------------------------------
+
 
 def download_prices(tickers, start, end):
     """Download daily auto-adjusted close prices. Returns a (dates x tickers) frame."""
@@ -85,9 +49,9 @@ def download_prices(tickers, start, end):
     return close.sort_index()
 
 
-# ---------------------------------------------------------------------------
+
 # Factor scores (all computed using only data available *at* the formation date)
-# ---------------------------------------------------------------------------
+
 
 def momentum_scores(monthly_px):
     """12-1 momentum: return from 13 months ago to 1 month ago (skip last month)."""
@@ -111,9 +75,9 @@ def reversal_scores(monthly_px):
     return -last_month_ret
 
 
-# ---------------------------------------------------------------------------
-# Backtest engine
-# ---------------------------------------------------------------------------
+
+# Backtest 
+
 
 def backtest_factor(scores, fwd_returns, top_fraction=TOP_FRACTION):
     """Given monthly factor scores and forward monthly returns, build:
@@ -155,9 +119,9 @@ def backtest_factor(scores, fwd_returns, top_fraction=TOP_FRACTION):
     return out
 
 
-# ---------------------------------------------------------------------------
+
 # Performance metrics
-# ---------------------------------------------------------------------------
+
 
 def performance_stats(monthly_ret, rf_annual=RF_ANNUAL):
     """CAGR, annualized vol, Sharpe, max drawdown, hit rate for a monthly series."""
@@ -184,10 +148,6 @@ def performance_stats(monthly_ret, rf_annual=RF_ANNUAL):
         "Months": len(r),
     }
 
-
-# ---------------------------------------------------------------------------
-# Main
-# ---------------------------------------------------------------------------
 
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
