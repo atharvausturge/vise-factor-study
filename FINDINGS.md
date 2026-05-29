@@ -62,13 +62,32 @@ low-vol L/S was catastrophic (-96% drawdown). Shorting the highest-momentum,
 highest-vol tech names during a secular bull market is a losing trade. Factors
 that work *across* the market can fail badly when you confine them to one sector.
 
+## Net of transaction costs
+
+Turnover matters a lot for which of these is actually implementable in a taxable
+advisor account. I added a one-side cost knob (round-trip = 2× one-side) and
+re-ran the long-only legs at 0 / 10 / 25 bps per side:
+
+| Factor | Avg monthly turnover | CAGR @ 0bp | CAGR @ 10bp | CAGR @ 25bp |
+|---|---|---|---|---|
+| Momentum (12-1) | 18% | 29.5% | 28.9% | 28.1% |
+| Low Volatility | **7%** | 19.4% | 19.2% | **18.9%** |
+| Short-Term Reversal | **67%** | 25.8% | 23.8% | **20.9%** |
+
+Two things jump out:
+
+- **Reversal looks competitive gross, but it bleeds ~5 points of CAGR at 25 bps**
+  — it's the highest-turnover and the most fragile to implementation friction.
+- **Low-vol is by far the most cost-friendly** (~7% monthly turnover) — it loses
+  almost nothing net of costs. That reinforces the "defensive sleeve for the
+  right client" angle: it's cheap to run *and* easier on the ride.
+
 ## Honest limitations
 
 - **Survivorship bias:** this is today's tech universe, so blow-ups that got
   delisted aren't included. Real-world results would be worse.
-- **No transaction costs or taxes:** monthly rebalancing isn't free, and a taxable
-  advisor account would care a lot about turnover. Momentum/reversal are the
-  highest-turnover here and would suffer most.
+- **Costs are a simple knob, not a model:** I'm not modeling spread, market
+  impact, or taxes — just a flat one-side bps haircut on turnover.
 - **No fundamental factors:** I deliberately skipped value/quality because testing
   them properly needs point-in-time fundamentals (using today's numbers on past
   dates would be look-ahead bias). That's the natural next step with better data.

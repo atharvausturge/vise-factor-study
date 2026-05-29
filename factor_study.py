@@ -32,6 +32,7 @@ UNIVERSE = [
 TOP_FRACTION = 1.0 / 3.0   # top tercile long, bottom tercile short
 TRADING_DAYS = 252
 RF_ANNUAL = 0.0            # risk-free assumed 0 for simplicity (noted in writeup)
+COST_SCENARIOS_BPS = [0, 10, 25]   # one-side trading cost in basis points
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -86,9 +87,12 @@ def backtest_factor(scores, fwd_returns, top_fraction=TOP_FRACTION):
         short       : equal-weight bottom tercile
         long_short : long minus short
 
-    Returns a DataFrame of monthly returns for each leg.
+    Returns a DataFrame of monthly returns *and* one-side turnover per leg so
+    transaction costs can be applied downstream.
     """
     long_ret, short_ret = [], []
+    long_turn, short_turn = [], []
+    prev_winners, prev_losers = set(), set()
     dates = []
 
     for date in scores.index:
@@ -104,19 +108,44 @@ def backtest_factor(scores, fwd_returns, top_fraction=TOP_FRACTION):
 
         n = max(1, int(round(len(row) * top_fraction)))
         ranked = row.sort_values(ascending=False)
-        winners = ranked.index[:n]
-        losers = ranked.index[-n:]
+        winners = set(ranked.index[:n])
+        losers = set(ranked.index[-n:])
 
-        long_ret.append(fwd[winners].mean())
-        short_ret.append(fwd[losers].mean())
+        # One-side turnover: fraction of names that left the portfolio.
+        # First period rebalances from cash, so turnover is 1.0.
+        if not prev_winners:
+            l_turn, s_turn = 1.0, 1.0
+        else:
+            l_turn = len(prev_winners - winners) / max(len(prev_winners), 1)
+            s_turn = len(prev_losers - losers) / max(len(prev_losers), 1)
+
+        long_ret.append(fwd[list(winners)].mean())
+        short_ret.append(fwd[list(losers)].mean())
+        long_turn.append(l_turn)
+        short_turn.append(s_turn)
+        prev_winners, prev_losers = winners, losers
         dates.append(date)
 
     out = pd.DataFrame(
-        {"long": long_ret, "short": short_ret},
+        {
+            "long": long_ret,
+            "short": short_ret,
+            "long_turn": long_turn,
+            "short_turn": short_turn,
+        },
         index=pd.DatetimeIndex(dates),
     )
     out["long_short"] = out["long"] - out["short"]
     return out
+
+
+def apply_costs(returns, turnover, cost_bps_one_side):
+    """Subtract round-trip transaction costs from a return series.
+
+    cost per month = 2 * one_side_turnover * (cost_bps / 10_000)
+    """
+    cost = 2.0 * turnover * (cost_bps_one_side / 10_000.0)
+    return returns - cost
 
 
 
@@ -177,6 +206,7 @@ def main():
     summary_rows = {}
     summary_rows["Equal-Weight Tech (benchmark)"] = bench_stats
 
+    cost_table_rows = {}
     for name, scores in factors.items():
         legs = backtest_factor(scores, fwd_returns)
         long_stats = performance_stats(legs["long"])
@@ -184,8 +214,20 @@ def main():
         summary_rows[f"{name} - Long top 1/3"] = long_stats
         summary_rows[f"{name} - Long/Short"] = ls_stats
 
+        # Net-of-cost long-only stats across scenarios (advisor cares about long).
+        avg_turn = legs["long_turn"].mean()
+        cost_row = {"AvgTurnover": avg_turn}
+        for bps in COST_SCENARIOS_BPS:
+            net = apply_costs(legs["long"], legs["long_turn"], bps)
+            stats = performance_stats(net)
+            cost_row[f"CAGR@{bps}bp"] = stats["CAGR"]
+            cost_row[f"Sharpe@{bps}bp"] = stats["Sharpe"]
+        cost_table_rows[name] = cost_row
+
         # Plot: growth of $1, long-only top tercile vs benchmark.
         plot_growth(name, legs["long"], bench_ret)
+
+    cost_table = pd.DataFrame(cost_table_rows).T
 
     summary = pd.DataFrame(summary_rows).T
     summary = summary[["CAGR", "AnnVol", "Sharpe", "MaxDD", "HitRate", "Months"]]
@@ -204,8 +246,24 @@ def main():
     print("=" * 78)
 
     summary.to_csv(os.path.join(RESULTS_DIR, "summary.csv"))
-    print(f"\nSaved table -> {os.path.join(RESULTS_DIR, 'summary.csv')}")
-    print(f"Saved charts -> {RESULTS_DIR}/cumulative_*.png")
+
+    # Pretty-print cost sensitivity.
+    ct = cost_table.copy()
+    for col in ct.columns:
+        if col.startswith("CAGR") or col == "AvgTurnover":
+            ct[col] = (ct[col] * 100).round(1).astype(str) + "%"
+        elif col.startswith("Sharpe"):
+            ct[col] = ct[col].round(2)
+
+    print("\n" + "=" * 78)
+    print("TRANSACTION-COST SENSITIVITY  (long-only top 1/3)")
+    print("=" * 78)
+    print(ct.to_string())
+    print("=" * 78)
+    cost_table.to_csv(os.path.join(RESULTS_DIR, "cost_sensitivity.csv"))
+
+    print(f"\nSaved tables  -> {RESULTS_DIR}/summary.csv, cost_sensitivity.csv")
+    print(f"Saved charts  -> {RESULTS_DIR}/cumulative_*.png")
 
 
 def plot_growth(factor_name, long_ret, bench_ret):
