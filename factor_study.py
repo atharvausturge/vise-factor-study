@@ -33,6 +33,7 @@ TOP_FRACTION = 1.0 / 3.0   # top tercile long, bottom tercile short
 TRADING_DAYS = 252
 RF_ANNUAL = 0.0            # risk-free assumed 0 for simplicity (noted in writeup)
 COST_SCENARIOS_BPS = [0, 10, 25]   # one-side trading cost in basis points
+DEFENSIVE_WEIGHTS = [0.0, 0.25, 0.50, 0.75, 1.0]   # weight on the defensive sleeve
 
 RESULTS_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "results")
 
@@ -148,6 +149,22 @@ def apply_costs(returns, turnover, cost_bps_one_side):
     return returns - cost
 
 
+def risk_tolerance_overlay(bench_ret, defensive_ret, weights):
+    """Blend the benchmark and a defensive sleeve at each weight in `weights`
+    (weight on the defensive sleeve), and return a DataFrame of risk/return
+    stats for each blend.
+
+    This is the explicit "advisor dial" — pick a client's tolerance, pick a tilt.
+    """
+    df = pd.DataFrame({"bench": bench_ret, "def": defensive_ret}).dropna()
+    rows = {}
+    for w in weights:
+        blended = (1 - w) * df["bench"] + w * df["def"]
+        stats = performance_stats(blended)
+        rows[f"{int(w*100)}% defensive"] = stats
+    return pd.DataFrame(rows).T
+
+
 
 # Performance metrics
 
@@ -207,8 +224,10 @@ def main():
     summary_rows["Equal-Weight Tech (benchmark)"] = bench_stats
 
     cost_table_rows = {}
+    factor_legs = {}
     for name, scores in factors.items():
         legs = backtest_factor(scores, fwd_returns)
+        factor_legs[name] = legs
         long_stats = performance_stats(legs["long"])
         ls_stats = performance_stats(legs["long_short"])
         summary_rows[f"{name} - Long top 1/3"] = long_stats
@@ -228,6 +247,12 @@ def main():
         plot_growth(name, legs["long"], bench_ret)
 
     cost_table = pd.DataFrame(cost_table_rows).T
+
+    # Risk-tolerance overlay: blend equal-weight tech with the low-vol tilt.
+    # This is the "advisor dial" -- pick a client's loss tolerance, pick a tilt.
+    lv_long = factor_legs["Low Volatility"]["long"]
+    rt_table = risk_tolerance_overlay(bench_ret, lv_long, DEFENSIVE_WEIGHTS)
+    plot_frontier(rt_table, os.path.join(RESULTS_DIR, "risk_tolerance_frontier.png"))
 
     summary = pd.DataFrame(summary_rows).T
     summary = summary[["CAGR", "AnnVol", "Sharpe", "MaxDD", "HitRate", "Months"]]
@@ -262,8 +287,23 @@ def main():
     print("=" * 78)
     cost_table.to_csv(os.path.join(RESULTS_DIR, "cost_sensitivity.csv"))
 
-    print(f"\nSaved tables  -> {RESULTS_DIR}/summary.csv, cost_sensitivity.csv")
-    print(f"Saved charts  -> {RESULTS_DIR}/cumulative_*.png")
+    # Pretty-print risk-tolerance overlay.
+    rt = rt_table.copy()
+    for col in ["CAGR", "AnnVol", "MaxDD", "HitRate"]:
+        rt[col] = (rt[col] * 100).round(1).astype(str) + "%"
+    rt["Sharpe"] = rt["Sharpe"].round(2)
+    rt["Months"] = rt["Months"].astype(int)
+    rt = rt[["CAGR", "AnnVol", "Sharpe", "MaxDD", "HitRate", "Months"]]
+
+    print("\n" + "=" * 78)
+    print("RISK-TOLERANCE OVERLAY  (blend: tech benchmark + low-vol tilt)")
+    print("=" * 78)
+    print(rt.to_string())
+    print("=" * 78)
+    rt_table.to_csv(os.path.join(RESULTS_DIR, "risk_tolerance.csv"))
+
+    print(f"\nSaved tables  -> {RESULTS_DIR}/summary.csv, cost_sensitivity.csv, risk_tolerance.csv")
+    print(f"Saved charts  -> {RESULTS_DIR}/cumulative_*.png, risk_tolerance_frontier.png")
 
 
 def plot_growth(factor_name, long_ret, bench_ret):
@@ -287,6 +327,34 @@ def plot_growth(factor_name, long_ret, bench_ret):
     safe = factor_name.split()[0].lower().replace("/", "")
     path = os.path.join(RESULTS_DIR, f"cumulative_{safe}.png")
     plt.savefig(path, dpi=130)
+    plt.close()
+
+
+def plot_frontier(rt_table, outpath):
+    """Plot the risk-tolerance frontier: annualized vol vs CAGR for each blend."""
+    if rt_table.empty:
+        return
+
+    vols = rt_table["AnnVol"].values * 100
+    cagrs = rt_table["CAGR"].values * 100
+    labels = rt_table.index.tolist()
+
+    plt.figure(figsize=(9, 6))
+    plt.plot(vols, cagrs, "-", color="steelblue", linewidth=2, alpha=0.7, zorder=1)
+    plt.scatter(vols, cagrs, s=110, c="steelblue", edgecolor="white",
+                linewidth=1.5, zorder=2)
+
+    for x, y, lbl in zip(vols, cagrs, labels):
+        plt.annotate(lbl, (x, y), textcoords="offset points",
+                     xytext=(10, -4), fontsize=10)
+
+    plt.xlabel("Annualized volatility (%)")
+    plt.ylabel("CAGR (%)")
+    plt.title("Risk-Tolerance Frontier — Tech Benchmark blended with Low-Vol Tilt",
+              fontsize=12, fontweight="bold")
+    plt.grid(True, alpha=0.3)
+    plt.tight_layout()
+    plt.savefig(outpath, dpi=130)
     plt.close()
 
 

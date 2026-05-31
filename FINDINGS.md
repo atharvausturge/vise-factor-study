@@ -62,6 +62,37 @@ low-vol L/S was catastrophic (-96% drawdown). Shorting the highest-momentum,
 highest-vol tech names during a secular bull market is a losing trade. Factors
 that work *across* the market can fail badly when you confine them to one sector.
 
+## The advisor's dial: a risk-tolerance overlay
+
+The low-vol finding above raises an obvious question: instead of going all-in or
+all-out on the defensive tilt, what does the trade-off look like *between*?
+That's the actual advisor problem — clients don't pick "defensive vs.
+aggressive," they sit somewhere on a spectrum.
+
+I built a family of blended portfolios that mix the equal-weight tech benchmark
+with the low-vol tilt at 0 / 25 / 50 / 75 / 100% defensive weight:
+
+| Blend | CAGR | Ann Vol | Sharpe | Max DD |
+|---|---|---|---|---|
+| 0% defensive (pure benchmark) | 27.9% | 21.4% | **1.27** | -37.1% |
+| 25% defensive | 25.8% | 20.1% | 1.26 | -35.7% |
+| 50% defensive | 23.7% | 18.9% | 1.23 | -34.4% |
+| 75% defensive | 21.6% | 17.9% | 1.19 | -33.1% |
+| 100% defensive (pure low-vol) | 19.4% | 17.2% | 1.12 | -31.8% |
+
+(See `results/risk_tolerance_frontier.png`.)
+
+**The interesting point: a 25% defensive tilt is almost free on Sharpe (1.27 →
+1.26) but already cuts vol by 1.3 points and trims ~1.5 points of drawdown.**
+That's the kind of "low-cost downside protection" knob that maps cleanly onto
+how an advisor would actually personalize. Larger tilts give up more return for
+diminishing risk benefit — the curve flattens.
+
+What this *doesn't* say: it doesn't tell you the *right* weight for a given
+client. That depends on stated loss tolerance, behavioral history, time horizon,
+and tax situation — exactly the inputs a personalization product would take in.
+But it does give a clean menu of trade-offs to choose from.
+
 ## Net of transaction costs
 
 Turnover matters a lot for which of these is actually implementable in a taxable
